@@ -66,10 +66,8 @@ extern "C" void convert_to_output(graph_t *G, void *result, forest_t *trees_outp
                     }
                 }
             }
-    MPI_Barrier(MPI_COMM_WORLD);
     if (rank == 0)
     {
-        printf("TREE SIZE %u\n", trees_mst.size());
         trees_output->p_edge_list = (edge_id_t *)malloc(trees_mst.size()*2 * sizeof(edge_id_t));
         edge_id_t number_of_edges = 0;
         for (vertex_id_t i = 0; i < trees_mst.size(); i++) number_of_edges += trees_mst[i].size();
@@ -82,15 +80,9 @@ extern "C" void convert_to_output(graph_t *G, void *result, forest_t *trees_outp
         }
         int k = 0;
         for (vertex_id_t i = 0; i < trees_mst.size(); i++) {
-            if(trees_mst[i].size() == 0){
-              trees_mst.erase(trees_mst.begin() + i);
-            }
-        }
-
-        for (vertex_id_t i = 0; i < trees_mst.size(); i++) {
             for (edge_id_t j = 0; j < trees_mst[i].size(); j++) {
                 trees_output->edge_id[k] = trees_mst[i][j];
-                printf("e[%u, %u]=%u\n", i, j, trees_mst[i][j]);
+                // printf("e[%u, %u]=%u\n", i, j, trees_mst[i][j]);
                 k++;
             }
         }
@@ -141,28 +133,14 @@ vertex_id_t find(tree_vertex_t* tree_vertexes, vertex_id_t i)
   return i;
 }
 
-bool assign_cheapest(full_edge_t* full_edges, graph_t*  G, vertex_id_t component_index,vertex_id_t second_component_index, edge_id_t j)
+void assign_cheapest(full_edge_t* full_edges, graph_t*  G, vertex_id_t component_index,vertex_id_t second_component_index, edge_id_t j)
 {
-  // printf("CHEAPEST ASSIGNED = %u\n", edge_to_global(j, G));
   if (full_edges[component_index].to == UINT32_MAX || G->weights[full_edges[component_index].edge] > G->weights[j]){
-    if( G->rank == 1 && j== 356 ){
-      // printf(" CHEAPEST ASSIGNED = %u %u\n",j, edge_to_global(j, G));
-      fflush(stdout);
-    }
-
     full_edges[component_index].to = second_component_index;
     full_edges[component_index].edge = j;
     full_edges[component_index].proc = G->rank;
     full_edges[component_index].weight = G->weights[j];
-    return true;
   }
-
-  // if (min_edge_of_vertexes[component_index] == UINT64_MAX || weights[min_edge_of_vertexes[component_index]] > weights[j]){
-  //   // printf("ENTERED\n");
-  //   min_edge_of_vertexes[component_index] = j;
-  //   return true;
-  // }
-  return false;
 }
 
 void unite(tree_vertex_t* tree_vertexes, vertex_id_t x, vertex_id_t y)
@@ -202,332 +180,83 @@ extern "C" void* MST_boruvka(graph_t *G) {
     MPI_Type_create_struct(nitems, blocklengths, offsets, types, &mpi_edge);
     MPI_Type_commit(&mpi_edge);
 
-    fflush(stdout);
-    MPI_Barrier(MPI_COMM_WORLD);
-    // for(int p=0; p < G->nproc; p++){
-    //   if(p == G->rank){
-    //     printf("\nnproc=%d n=%d m=%d\n", G->nproc, G->local_n, G->local_m);
-    //     printf("RANK= %d \n", G->rank);
-    //     for(vertex_id_t i = 0; i < G->local_n; i++) {
-    //       printf("i= %d|||| \n", VERTEX_TO_GLOBAL(i, G->n, G->nproc, G->rank));
-    //       for (vertex_id_t j = G->rowsIndices[i]; j < G->rowsIndices[i+1]; j++) {
-    //         int a = VERTEX_TO_GLOBAL(i, G->n, G->nproc, G->rank);
-    //         if(edge_to_global(j,G) == 872)
-    //           printf("%d to %d, weight= %lf, edge_number= %d  \n", a, G->endV[j], G-> weights[j], j);
-    //       }
-    //
-    //     }
-    //     printf("\n");
-    //     // }
-    //   }
-    //   fflush(stdout);
-    //   MPI_Barrier(MPI_COMM_WORLD);
-    // }
-    // exit(0);
 
     trees.clear();
     int rank = G->rank, size = G->nproc;
     vertex_id_t local_n = G->local_n, number_of_components = G->local_n, n = G->n;
-    // vertex_id_t* parents = (vertex_id_t*)malloc(sizeof(vertex_id_t) * local_n);
-    // vertex_id_t* ranks = (vertex_id_t*)malloc(sizeof(vertex_id_t) * local_n);
     tree_vertex_t* tree_vertexes = (tree_vertex_t*)malloc(sizeof(tree_vertex_t) * G->n);
     vector < edge_id_t > min_edges;
     vector < vertex_id_t > min_edges_to;
 
-    // vector < vertex_id_t > components;
-
-    // edge_id_t* min_edges = (edge_id_t*)malloc(sizeof(edge_id_t) * local_n);
-
-    // edge_id_t* min_edge_of_vertexes =  new edge_id_t[n]; //(edge_id_t*)malloc(sizeof(edge_id_t) * local_n);
     vertex_id_t* met_components = new vertex_id_t[n];
     full_edge_t* full_edges = new full_edge_t[n];
     full_edge_t* received_full_edges = new full_edge_t[n];
 
-    // unsigned* count_from_procs = new unsigned[size];
-    // unsigned* count_to_procs = new unsigned[size];
-
-    // vertex_id_t* components = (vertex_id_t*)malloc(sizeof(vertex_id_t) * local_n);
-// VERTEX_TO_GLOBAL(i, G->n, G->nproc, G->rank);
     bool changed, changed_now;
     for(vertex_id_t i=0; i < n;i++){
       tree_vertexes[i].parent =  i;//VERTEX_TO_GLOBAL(i, G->n, G->nproc, G->rank);
       tree_vertexes[i].rank = 0;
       met_components[i] = UINT32_MAX;
-      // min_edge_of_vertexes[i] = -1;
     }
 
 
-    // for(vertex_id_t i = 0; i < G->local_n; i++) {
-    //   for (edge_id_t j = G->rowsIndices[i]; j < G->rowsIndices[i+1]; j++) {
-    //     // G->endV[j]
-    //     // to
-    //   }
-    // }
-    unsigned counter = 0;
     while(true){
-      counter++;
-      // if(rank == 0) printf("|||||\n");
       changed = false;
       for(vertex_id_t i=0; i < G->n;i++){
         full_edges[i].to = UINT32_MAX;
       }
 
-      // for(int i=0; i < n;i++){
-      //   min_edge_of_vertexes[i] = UINT64_MAX;
-      // }
-      // unsigned p1,delta,from,to;
-      //   for(delta = 1; delta < size; delta*=2){
-      //     if(rank % (delta*2) == 0){
-      //       from = rank + delta;
-      //       // printf("%u <- %u\n", rank, from);
-      //     }
-      //     else if(rank % delta == 0){
-      //       to = rank - delta;
-      //       // printf("%u -> %u\n", rank, to);
-      //     }
-      //   }
-      //   MPI_Barrier(MPI_COMM_WORLD);
-      //   printf("FINAL\n");
-      //   fflush(stdout);
-      //   MPI_Finalize();
-      //   exit(0);
-        //
-        // to = rank - delta;
-        // Recv(to);
-
-
-      // for(delta/=2; delta >0; delta /=2){
-      //   next = rank + delta;
-      //   // if(next < size)
-      //   // printf("%u <- %u\n", rank, next);
-      //   // Recv(next);
-      // }
-      //
-
-
       for(vertex_id_t i = 0; i < G->local_n; i++) {
         for (edge_id_t j = G->rowsIndices[i]; j < G->rowsIndices[i+1]; j++) {
-          // G->endV[j];
-          // // MPI_Barrier(MPI_COMM_WORLD);
-          // printf("IN CYCLE \n");
-
-          // printf("FINISH_NOW rank=%u first = %u second = %u\n", rank,first_component_index, second_component_index);
-          // fflush(stdout);
-          // MPI_Barrier(MPI_COMM_WORLD);
-
           vertex_id_t first_component_index = find(tree_vertexes, VERTEX_TO_GLOBAL(i, G->n, G->nproc, G->rank));
-          // MPI_Barrier(MPI_COMM_WORLD);
-          // // printf("IN CYCLE \n");
-          // printf("FINISH_NOW rank=%u first = %u\n", rank,first_component_index);
-          // fflush(stdout);
-          // MPI_Barrier(MPI_COMM_WORLD);
-
-
           vertex_id_t second_component_index = find(tree_vertexes, G->endV[j]);
-          // MPI_Barrier(MPI_COMM_WORLD);
-          // // printf("IN CYCLE \n");
-          // printf("FINISH_NOW rank=%u first = %u second = %u\n", rank,first_component_index, second_component_index);
-          // fflush(stdout);
-          // MPI_Barrier(MPI_COMM_WORLD);
-          //
 
-
-          if (first_component_index == second_component_index /*||
-                VERTEX_OWNER(first_component_index, G->n, size) != rank ||
-                VERTEX_OWNER(second_component_index, G->n, size) != rank*/){
+          if (first_component_index == second_component_index){
             continue;
           }
-          // if(VERTEX_OWNER(second_component_index, G->n, size) == rank){
-            // if(rank == 1 && j == 356){
-            //   printf(j)
-            // }
             assign_cheapest(full_edges, G, first_component_index, second_component_index, j);
             assign_cheapest(full_edges, G, second_component_index, first_component_index, j);
-          // }else{
-            // if (full_edges[second_component_index].from == UINT32_MAX || G->weights[full_edges[second_component_index].from] > G->weights[j]){
-            //   full_edges[second_component_index].from = first_component_index;
-            //   // full_edges[second_component_index].edge = j;
-            //   full_edges[second_component_index].weight = G->weights[j];
-            // }
-
-
-          // }
         }
-        // printf("NEXT!!!!!!!!!!!!!!!!!!!!!!!\n");
       }
-      // for unsigned i=0; i < G->i++;
-
-
-      // if(!changed){
-        // printf("NOT CHANGED!!!! %d\n",rank);
-        //
-        // for(edge_id_t i = 0; i < min_edges.size(); i++){
-        //   vertex_id_t component = find(tree_vertexes, G->endV[min_edges[i]]);
-        //   if(met_components[component] == UINT32_MAX){
-        //     vertex_id_t size = trees.size();
-        //     trees.push_back(vector<edge_id_t>());
-        //     met_components[component] = size;
-        //   }
-        //   // printf("AAAAAA %u %u %u %u \n", G->endV[min_edges[i]], component, met_components[component], UINT64_MAX );
-        //   trees[met_components[component]].push_back(min_edges[i]);
-        //
-        // }
-      //   return &trees;
-      // }
-      // for(int s=0; s < size ;s++){
-      //   MPI_Barrier(MPI_COMM_WORLD);
-      //   // printf("rank == \n");
-      //   if(rank == s){
-      //     printf("RANK=%u n=%u\n", rank, G->n);
-      //     for (vertex_id_t i=0; i < G->n; i++)
-      //     {
-      //
-      //       if(full_edges[i].to != UINT32_MAX)
-      //         printf("full_edges[%u] from=%u  w=%lf i=%u \n",i, full_edges[i].to, full_edges[i].weight, full_edges[i].edge );
-      //     }
-      //     fflush(stdout);
-      //   }
-      //   MPI_Barrier(MPI_COMM_WORLD);
-      //
-      // }
-      // fflush(stdout);
-      // MPI_Finalize();
-      // exit(0);
-      // for(int s=0; s < size ;s++){
-      //   MPI_Barrier(MPI_COMM_WORLD);
-      //   // printf("rank == \n");
-      //   if(rank == s){
-      //     printf("RANK=%u n=%u\n", rank, G->n);
-      //     for (vertex_id_t i=0; i < G->n; i++)
-      //     {
-      //
-      //       if(full_edges[i].to != UINT32_MAX)
-      //         printf("full_edges[%u] to=%u  w=%lf i=%u \n",i, full_edges[i].to, full_edges[i].weight,edge_to_global(full_edges[i].edge,G) );
-      //     }
-      //     fflush(stdout);
-      //   }
-      //   MPI_Barrier(MPI_COMM_WORLD);
-      //
-      // }
-      //
-
       int delta,from,to;
       MPI_Status status;
       for(delta = 1; delta < size; delta*=2){
         if(rank % (delta*2) == 0){
           from = rank + delta;
-          // printf("%u <- %u\n", rank, from);
           MPI_Recv(received_full_edges, n, mpi_edge, from, 0, MPI_COMM_WORLD, &status);
           for (vertex_id_t i=0; i < G->n; i++)
           {
-
-//full_edges[i]
-            if(received_full_edges[i].proc == 1 &&  received_full_edges[i].edge == 356){
-              printf("received_full_edge 872 = %u %u %u  rank of edge = %d rank of proc =  %d\n",
-              received_full_edges[i].edge, edge_to_global(received_full_edges[i].edge, G),counter, received_full_edges[i].proc, G->rank);
-              fflush(stdout);
-            }
-
             if(received_full_edges[i].to != UINT32_MAX && (full_edges[i].to == UINT32_MAX ||  full_edges[i].weight > received_full_edges[i].weight))
               full_edges[i] = received_full_edges[i];
-            if(full_edges[i].proc == 1 &&  full_edges[i].edge == 356){
-              printf("FULL EDGE    CHEAPEST ASSIGNED = %u %u %u  rank of edge = %d rank of proc =  %d\n",
-              full_edges[i].edge, edge_to_global(full_edges[i].edge, G),counter, full_edges[i].proc, G->rank);
-              fflush(stdout);
-            }
-
-              // if(rank == 0){
-              //   changed = true;
-              // }g
-              // printf("full_edges[%u] from=%u  w=%lf i=%u \n",i, full_edges[i].from, full_edges[i].weight, full_edges[i].edge );
           }
 
         }
         else if(rank % delta == 0){
           to = rank - delta;
-          // printf("%u -> %u\n", rank, to);
-          for (vertex_id_t i=0; i < G->n; i++)
-          if(edge_to_global(full_edges[i].edge, G) == 872){
-            printf("SEND 872 %u %u %u  rank of edge = %d rank of proc =  %d FROM %d -> %d \n",
-            full_edges[i].edge, edge_to_global(full_edges[i].edge, G),counter, full_edges[i].proc, G->rank, G->rank,to);
-            fflush(stdout);
-          }
-
           MPI_Send(full_edges, n, mpi_edge, to, 0, MPI_COMM_WORLD);
         }
       }
-      // printf("SSSSS RANK= %d\n", rank);
-      // if(rank == 0){
-      //   for (vertex_id_t i=0; i < G->n; i++)
-      //   {
-      //
-      //   }
-      // }
-      // if(!changed){
-      //   exit(0);
-      // }
-
       MPI_Bcast(full_edges, n, mpi_edge, 0,MPI_COMM_WORLD);
-      MPI_Barrier(MPI_COMM_WORLD);
-      for(int s=0; s < 1 ;s++){
-        // MPI_Barrier(MPI_COMM_WORLD);
-        // printf("rank == \n");
-        if(rank == s){
-          // printf("!!!!!!!!!!!!RANK=%u n=%u\n", rank, G->n);
-          for (vertex_id_t i=0; i < G->n; i++)
-          {
-
-            // if(full_edges[i].to != UINT32_MAX)
-            //   printf("full_edges[%u] to=%u  w=%lf i=%u \n",i, full_edges[i].to, full_edges[i].weight, full_edges[i].edge );
-          }
-          fflush(stdout);
-        }
-        // MPI_Barrier(MPI_COMM_WORLD);
-
-      }
-      MPI_Barrier(MPI_COMM_WORLD);
-
-      // exit(0);
-      //
-      // MPI_Barrier(MPI_COMM_WORLD);
-      // exit(0);
-
       for (vertex_id_t i=0; i < G->n; i++)
       {
-         for(int s=0; s < size; s++){
-           MPI_Barrier(MPI_COMM_WORLD);
-         if(s == rank){
           // Check if cheapest for current set exists
           if (full_edges[i].to != UINT32_MAX)
           {
               vertex_id_t first_component_index = find(tree_vertexes, i);
               vertex_id_t second_component_index = find(tree_vertexes, full_edges[i].to);
-              // if(rank == 0) printf("first %u second %u\n", first_component_index, second_component_index);
-              if (first_component_index == second_component_index /*||
-                    VERTEX_OWNER(first_component_index, G->n, size) != rank ||
-                    VERTEX_OWNER(second_component_index, G->n, size) != rank*/){
-                    // if(rank == 0) printf("HERE\n");
+              if (first_component_index == second_component_index){
                 continue;
               }
-              // printf("rank = %d i=%u from = %u to = %u\n",rank,i, first_component_index, second_component_index);
-
               changed = true;
+
               unite(tree_vertexes, first_component_index, second_component_index);
-              // if(VERTEX_OWNER(i, G->n, size) == rank){
               if(full_edges[i].proc == rank){
                 min_edges.push_back(full_edges[i].edge);
-                // printf(">>>>>> added weight %u -> %u  %lf\n", full_edges[i].edge, edge_to_global(full_edges[i].edge,G) ,G->weights[full_edges[i].edge]);
                 min_edges_to.push_back(G->endV[full_edges[i].edge]);
               }
 
           }
-        }
-        }
       }
-      // MPI_Barrier(MPI_COMM_WORLD);
-      // printf("Rank %u changed? %u\n", rank, changed);
-      // fflush(stdout);
-      // MPI_Barrier(MPI_COMM_WORLD);
 
       if(!changed){
         fflush(stdout);
@@ -538,30 +267,19 @@ extern "C" void* MST_boruvka(graph_t *G) {
             trees.push_back(vector<edge_id_t>());
             met_components[component] = size;
           }
-          // printf("AAAAAA %u %u %u %u \n", G->endV[min_edges[i]], component, met_components[component], UINT64_MAX );
-          // trees[met_components[component]].push_back(edge_to_global(min_edges[i],G));
         }
         for(edge_id_t i = 0; i < min_edges.size(); i++){
           vertex_id_t component = find(tree_vertexes, min_edges_to[i]);
           trees[met_components[component]].push_back( edge_to_global(min_edges[i],G));
-          // trees[met_components[component]].push_back( min_edges[i]);
 
         }
-        // printf("FINISHED RANK %u\n", rank);
         return &trees;
 
       }
-      // if(rank == 0)
-      // for (vertex_id_t i=0; i < G->n; i++)
-      // {
-      //   printf("%u is in %u\n", i, find(tree_vertexes, i) );
-      //   // tree_vertexes()
-      // }
     }
 
 
 
-    return &trees;
 }
 
 
