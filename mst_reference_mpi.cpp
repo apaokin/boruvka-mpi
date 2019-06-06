@@ -269,6 +269,15 @@ void sort_vertexes(graph_t *G, vertex_id_t* foreign_vertexes, vertex_id_t &curre
 extern "C" void* MST_boruvka(graph_t *G) {
     int rank = G->rank, size = G->nproc;
     bool changed;
+
+    for(vertex_id_t i = 0; i < G->local_n; i++) {
+      for (edge_id_t j = G->rowsIndices[i]; j < G->rowsIndices[i+1]; j++) {
+          vertex_id_t x = G->endV[j];
+          if(i / 2 != x / 2)
+            G->endV[j] = i;
+      }
+    }
+    print_source_graph(G);
     vector < edge_id_t > min_edges;
     // vector < vertex_id_t > min_edges_to;
 
@@ -341,6 +350,8 @@ extern "C" void* MST_boruvka(graph_t *G) {
               changed = true;
 
               unite(full_edges, first_component_index, second_component_index);
+              printf("UNITE %u %u , %u\n", first_component_index, second_component_index, full_edges[i].edge);
+
               min_edges.push_back(full_edges[i].edge);
 
           }
@@ -362,6 +373,7 @@ extern "C" void* MST_boruvka(graph_t *G) {
         for(edge_id_t i = 0; i < min_edges.size(); i++){
           edge_id_t edge = min_edges[i];
           vertex_id_t component = find(full_edges, G->endV[edge], G);
+          printf("edge %u component  %u\n", edge, component);
           // if(component != 43)
           //   cout << component << endl;
           auto addr = components_map.find(component);
