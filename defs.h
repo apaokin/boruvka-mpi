@@ -26,10 +26,11 @@ typedef struct
 
 typedef struct
 {
-  vertex_id_t vertex;
+  // vertex_id_t vertex;
   vertex_id_t parent;
   edge_id_t edge;
-  weight_t weight;
+  // weight_t weight;
+  vertex_id_t rank;
 } full_edge_t;
 
 
