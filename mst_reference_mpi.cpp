@@ -201,7 +201,7 @@ bool unite(full_edge_t* full_edges, vertex_id_t x, vertex_id_t y)
     // int yroot = find(subsets, y);
     // Attach smaller rank tree under root of high
     // rank tree (Union by Rank)
-    if(full_edges[x].parent != x || full_edges[y].parent != y)  return false;
+    // if(full_edges[x].parent != x || full_edges[y].parent != y)  return false;
     if (full_edges[x].rank < full_edges[y].rank)
         full_edges[x].parent = y;
     else if (full_edges[x].rank > full_edges[y].rank)
@@ -271,7 +271,7 @@ void sort_vertexes(graph_t *G, vertex_id_t* foreign_vertexes, vertex_id_t &curre
 extern "C" void* MST_boruvka(graph_t *G) {
     int rank = G->rank, size = G->nproc;
     bool changed;
-    omp_nest_lock_t *vertex_locks = new omp_nest_lock_t[G->local_n];
+    // omp_nest_lock_t *vertex_locks = new omp_nest_lock_t[G->local_n];
 
     // for(vertex_id_t i = 0; i < G->local_n; i++) {
     //   for (edge_id_t j = G->rowsIndices[i]; j < G->rowsIndices[i+1]; j++) {
@@ -317,9 +317,9 @@ extern "C" void* MST_boruvka(graph_t *G) {
       full_edges[i].rank = 0;
     }
 
-    for(vertex_id_t i = 0; i < G->local_n; i++){
-      omp_init_nest_lock(&vertex_locks[i]);
-    }
+    // for(vertex_id_t i = 0; i < G->local_n; i++){
+    //   omp_init_nest_lock(&vertex_locks[i]);
+    // }
     // memcpy(buf_foreign_vertexes, G->endV, sizeof(vertex_id_t)*G->local_m);
     while(true){
         bool changed = false;
@@ -330,7 +330,6 @@ extern "C" void* MST_boruvka(graph_t *G) {
           // full_edges[i].rank = 0;
 
         }
-        #pragma omp parallel for
         for(vertex_id_t i = 0; i < G->local_n; i++) {
           for (edge_id_t j = G->rowsIndices[i]; j < G->rowsIndices[i+1]; j++) {
               // buffer_to[begin_to[VERTEX_OWNER(G->endV[j], G->n, G->nproc)]] =
@@ -343,7 +342,6 @@ extern "C" void* MST_boruvka(graph_t *G) {
             assign_cheapest(full_edges, G, i, j);
           }
         }
-      #pragma omp parallel for num_threads(1)
       for (vertex_id_t i=0; i < G->local_n; i++)
       {
           // Check if cheapest for current set exists
@@ -369,9 +367,9 @@ extern "C" void* MST_boruvka(graph_t *G) {
               // omp_set_nest_lock(&vertex_locks[second_component_index]);
               // printf("HERE 2 from %d\n", omp_get_thread_num());
               // fflush(stdout);
-              }
+              // }
               // exit(0);
-              if(unite(full_edges, first_component_index, second_component_index,vertex_locks)){
+              if(unite(full_edges, first_component_index, second_component_index)){
                 min_edges.push_back(full_edges[i].edge);
               }
               // omp_unset_nest_lock(&vertex_locks[first_component_index]);
