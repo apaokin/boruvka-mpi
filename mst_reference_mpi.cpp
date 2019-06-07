@@ -14,6 +14,8 @@
 
 #define UINT32_MAX  (0xffffffff)
 #define UINT64_MAX  (0xffffffffffffffff)
+#define NUM_THREADS 4
+#define NUM_THREADS_UNITE 2
 
 using namespace std;
 
@@ -161,10 +163,13 @@ vertex_id_t find(full_edge_t* full_edges, vertex_id_t i, graph_t* G)
   // }
   // printf("rank = %d Want find  i= %u\n", G->rank, i);
   vertex_id_t new_i;
+  #pragma omp critical
+  {
   while(i != full_edges[i].parent){
-    new_i = full_edges[i].parent;
-    full_edges[i].parent = full_edges[new_i].parent;
-    i = full_edges[new_i].parent;
+      new_i = full_edges[i].parent;
+      full_edges[i].parent = full_edges[new_i].parent;
+      i = full_edges[new_i].parent;
+  }
   }
   return i;
 }
@@ -195,26 +200,66 @@ void assign_cheapest(full_edge_t* full_edges, graph_t*  G, vertex_id_t i, edge_i
   }
 }
 
-bool unite(full_edge_t* full_edges, vertex_id_t x, vertex_id_t y)
+inline bool unite_helper(full_edge_t* full_edges, vertex_id_t x, vertex_id_t y, omp_nest_lock_t* vertex_locks, vertex_id_t rank_x, vertex_id_t rank_y){
+  // omp_set_nest_lock(&vertex_locks[x]);
+  bool res;
+  // #pragma omp critical
+  {
+  if(full_edges[x].parent != x  || full_edges[y].parent != y || full_edges[x].rank != rank_x){
+    // omp_unset_nest_lock(&vertex_locks[x]);
+    res = false;
+  }else{
+    full_edges[x].parent = y;
+    if(rank_x == rank_y){
+      full_edges[x].rank++;
+    }
+    // omp_unset_nest_lock(&vertex_locks[x]);
+    res  = true;
+  }
+  }
+  return res;
+}
+
+// inline bool unite_helper_equal(full_edge_t* full_edges, vertex_id_t x, vertex_id_t y, omp_nest_lock_t* vertex_locks, vertex_id_t rank_x, vertex_id_t rank_y){
+//   omp_set_nest_lock(&vertex_locks[x]);
+//   if(full_edges[x].parent != x  || full_edges[y].parent != y || full_edges[x].rank != rank_x){
+//     omp_unset_nest_lock(&vertex_locks[x]);
+//     return false;
+//   }else{
+//     full_edges[x].parent = y;
+//     full_edges[y].rank++;
+//     omp_unset_nest_lock(&vertex_locks[x]);
+//     return true;
+//   }
+// }
+
+
+bool unite(full_edge_t* full_edges, vertex_id_t x, vertex_id_t y, omp_nest_lock_t* vertex_locks)
 {
+    // printf("%u %u\n", x,y);
     // int xroot = find(subsets, x);
     // int yroot = find(subsets, y);
     // Attach smaller rank tree under root of high
     // rank tree (Union by Rank)
-    if(full_edges[x].parent != x || full_edges[y].parent != y)  return false;
+    // if(full_edges[x].parent != x || full_edges[y].parent != y)  return false;
     if (full_edges[x].rank < full_edges[y].rank)
-        full_edges[x].parent = y;
+          return unite_helper(full_edges, x, y, vertex_locks, full_edges[x].rank, full_edges[y].rank);
+        // full_edges[x].parent = y;
     else if (full_edges[x].rank > full_edges[y].rank)
-        full_edges[y].parent = x;
+        // full_edges[y].parent = x;
+          return unite_helper(full_edges, y, x, vertex_locks, full_edges[x].rank, full_edges[y].rank);
+
 
     // If ranks are same, then make one as root and
     // increment its rank by one
     else
     {
-        full_edges[y].parent = x;
-        full_edges[x].rank++;
+        return unite_helper(full_edges, x, y, vertex_locks, full_edges[x].rank, full_edges[y].rank);
+
+        // full_edges[y].parent = x;
+        // full_edges[x].rank++;
     }
-    return true;
+    // return true;
 }
 
 
@@ -330,7 +375,7 @@ extern "C" void* MST_boruvka(graph_t *G) {
           // full_edges[i].rank = 0;
 
         }
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(NUM_THREADS)
         for(vertex_id_t i = 0; i < G->local_n; i++) {
           for (edge_id_t j = G->rowsIndices[i]; j < G->rowsIndices[i+1]; j++) {
               // buffer_to[begin_to[VERTEX_OWNER(G->endV[j], G->n, G->nproc)]] =
@@ -343,7 +388,8 @@ extern "C" void* MST_boruvka(graph_t *G) {
             assign_cheapest(full_edges, G, i, j);
           }
         }
-      #pragma omp parallel for num_threads(1)
+
+      #pragma omp parallel for num_threads(NUM_THREADS_UNITE)
       for (vertex_id_t i=0; i < G->local_n; i++)
       {
           // Check if cheapest for current set exists
@@ -355,6 +401,7 @@ extern "C" void* MST_boruvka(graph_t *G) {
                 continue;
               }
               changed = true;
+              // printf(" %u - %u\n", first_component_index, second_component_index);
               // while (!omp_test_lock (&vertex_locks[first_component_index])){
               //   printf("WAITING\n");
               // }
@@ -369,10 +416,13 @@ extern "C" void* MST_boruvka(graph_t *G) {
               // omp_set_nest_lock(&vertex_locks[second_component_index]);
               // printf("HERE 2 from %d\n", omp_get_thread_num());
               // fflush(stdout);
-              }
+              // }
               // exit(0);
-              if(unite(full_edges, first_component_index, second_component_index,vertex_locks)){
-                min_edges.push_back(full_edges[i].edge);
+              // #pragma omp critical
+              {
+                if(unite(full_edges, first_component_index, second_component_index,vertex_locks)){
+                  min_edges.push_back(full_edges[i].edge);
+                }
               }
               // omp_unset_nest_lock(&vertex_locks[first_component_index]);
               // omp_unset_nest_lock(&vertex_locks[second_component_index]);
@@ -385,6 +435,9 @@ extern "C" void* MST_boruvka(graph_t *G) {
 
 
       if(!changed){
+        // free(full_edges);
+        // free(vertex_locks);
+
         // fflush(stdout);
         // for(vertex_id_t i = 0; i < G->local_n; i++){
         //   vertex_id_t component = find(tree_vertexes, i);
@@ -395,13 +448,23 @@ extern "C" void* MST_boruvka(graph_t *G) {
         //   }
         // }
         trees.clear();
+        // printf("SSSSS\n");
         for(vertex_id_t i = 0; i < G->local_n;i++){
+          // printf("1111111\n");
+          // fflush(stdout);
           vertex_id_t component = find(full_edges, i, G);
           if(i != component) continue;
+          // printf("2222 INTERMED i = %u component = %u\n",i, component);
+          // fflush(stdout);
+
           trees.push_back(vector<edge_id_t>());
           components_map.insert(pair <vertex_id_t, vertex_id_t>(component,trees.size() - 1));
           // trees[trees.size() - 1].push_back(edge_to_global(edge,G));
         }
+
+        // printf("INTERMED\n");
+        // fflush(stdout);
+
 
         for(edge_id_t i = 0; i < min_edges.size(); i++){
           edge_id_t edge = min_edges[i];
@@ -429,6 +492,11 @@ extern "C" void* MST_boruvka(graph_t *G) {
         //
         // printf("COMPLETED\n");
         // fflush(stdout);
+        free(full_edges);
+        free(vertex_locks);
+
+        printf("FINISHED\n");
+        fflush(stdout);
         return &trees;
     //
       }
