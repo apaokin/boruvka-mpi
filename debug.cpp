@@ -204,25 +204,25 @@ extern "C" void* MST_boruvka(graph_t *G) {
 
     fflush(stdout);
     MPI_Barrier(MPI_COMM_WORLD);
-    // for(int p=0; p < G->nproc; p++){
-    //   if(p == G->rank){
-    //     printf("\nnproc=%d n=%d m=%d\n", G->nproc, G->local_n, G->local_m);
-    //     printf("RANK= %d \n", G->rank);
-    //     for(vertex_id_t i = 0; i < G->local_n; i++) {
-    //       printf("i= %d|||| \n", VERTEX_TO_GLOBAL(i, G->n, G->nproc, G->rank));
-    //       for (vertex_id_t j = G->rowsIndices[i]; j < G->rowsIndices[i+1]; j++) {
-    //         int a = VERTEX_TO_GLOBAL(i, G->n, G->nproc, G->rank);
-    //         if(edge_to_global(j,G) == 872)
-    //           printf("%d to %d, weight= %lf, edge_number= %d  \n", a, G->endV[j], G-> weights[j], j);
-    //       }
-    //
-    //     }
-    //     printf("\n");
-    //     // }
-    //   }
-    //   fflush(stdout);
-    //   MPI_Barrier(MPI_COMM_WORLD);
-    // }
+    for(int p=0; p < G->nproc; p++){
+      if(p == G->rank){
+        printf("\nnproc=%d n=%d m=%d\n", G->nproc, G->local_n, G->local_m);
+        printf("RANK= %d \n", G->rank);
+        for(vertex_id_t i = 0; i < G->local_n; i++) {
+          printf("i= %d|||| \n", VERTEX_TO_GLOBAL(i, G->n, G->nproc, G->rank));
+          for (vertex_id_t j = G->rowsIndices[i]; j < G->rowsIndices[i+1]; j++) {
+            int a = VERTEX_TO_GLOBAL(i, G->n, G->nproc, G->rank);
+            if(edge_to_global(j,G) == 872)
+              printf("%d to %d, weight= %lf, edge_number= %d  \n", a, G->endV[j], G-> weights[j], j);
+          }
+
+        }
+        printf("\n");
+        // }
+      }
+      fflush(stdout);
+      MPI_Barrier(MPI_COMM_WORLD);
+    }
     // exit(0);
 
     trees.clear();

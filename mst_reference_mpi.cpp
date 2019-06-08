@@ -164,7 +164,6 @@ vertex_id_t find(full_edge_t* full_edges, vertex_id_t i, graph_t* G)
   // printf("rank = %d Want find  i= %u\n", G->rank, i);
   vertex_id_t new_i;
   // printf("find %u\n",i);
-  // #pragma omp critical
   {
   while(i != full_edges[i].parent){
       new_i = full_edges[i].parent;
@@ -189,7 +188,6 @@ void assign_cheapest(full_edge_t* full_edges, graph_t*  G, vertex_id_t i, edge_i
   if (first_component_index == second_component_index){
     return;
   }
-  // #pragma omp critical
   {
     if (first_component_index == second_component_index){
       printf("WFADWAFWA\n");
@@ -214,7 +212,6 @@ void assign_cheapest(full_edge_t* full_edges, graph_t*  G, vertex_id_t i, edge_i
 inline bool unite_helper(full_edge_t* full_edges, vertex_id_t x, vertex_id_t y, omp_nest_lock_t* vertex_locks, vertex_id_t rank_x, vertex_id_t rank_y){
   // omp_set_nest_lock(&vertex_locks[x]);
   bool res;
-  // #pragma omp critical
   {
     // printf("I WANT TO UNITE %u to %u from %d \n",x, y, omp_get_thread_num());
   if(full_edges[x].parent != x  || full_edges[y].parent != y){
@@ -232,7 +229,6 @@ inline bool unite_helper(full_edge_t* full_edges, vertex_id_t x, vertex_id_t y, 
   }
   // fflush(stdout);
   }
-  #pragma omp flush(res)
   return res;
 }
 
@@ -245,7 +241,6 @@ bool unite(full_edge_t* full_edges, vertex_id_t x, vertex_id_t y, omp_nest_lock_
     // rank tree (Union by Rank)
     // if(full_edges[x].parent != x || full_edges[y].parent != y)  return false;
     bool res;
-    // #pragma omp critical
     {
 
     if (full_edges[x].rank < full_edges[y].rank)
@@ -391,7 +386,6 @@ extern "C" void* MST_boruvka(graph_t *G) {
             // if (first_component_index == second_component_index){
             //   continue;
             // }
-            // #pragma omp critical
             {
               // printf("ffff\n");
               assign_cheapest(full_edges, G, i, j);
@@ -428,7 +422,6 @@ extern "C" void* MST_boruvka(graph_t *G) {
               // fflush(stdout);
               // }
               // exit(0);
-              // #pragma omp critical
               {
                 // printf("I WANT TO UNITE %u and %u from %d \n",first_component_index, second_component_index, omp_get_thread_num());
                 // fflush(stdout);
@@ -437,6 +430,7 @@ extern "C" void* MST_boruvka(graph_t *G) {
                   // fflush(stdout);
                   #pragma omp critical
                   {
+                    // printf("THR %d\n", omp_get_thread_num());
                     min_edges.push_back(full_edges[i].edge);
                   }
                   // printf("SUCCESS FINISHED %u and %u from %d \n",first_component_index, second_component_index, omp_get_thread_num());

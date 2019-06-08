@@ -3,9 +3,9 @@ CC=gcc
 MPICC=mpicc
 CXX=g++
 MPICXX=mpicxx
-CFLAGS= -O3 -Wall -std=gnu99 -openmp
-CXXFLAGS= -O3 -Wall
-LDFLAGS= -O3 -lrt
+CFLAGS= -O3 -Wall -std=gnu99 -fopenmp
+CXXFLAGS= -O3 -Wall -fopenmp
+LDFLAGS= -O3 -lrt -fopenmp
 
 
 TARGET = gen_valid_info validation gen_RMAT mst_reference mst_reference_mpi mst
