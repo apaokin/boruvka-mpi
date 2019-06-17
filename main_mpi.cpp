@@ -51,7 +51,14 @@ void print0(int rank, const char* format, ...)
 
 void init(int argc, char** argv, graph_t* G)
 {
-    MPI_Init (&argc, &argv);
+    int provided;
+    MPI_Init_thread( &argc, &argv, MPI_THREAD_MULTIPLE, &provided );
+    if(provided != MPI_THREAD_MULTIPLE){
+      fprintf(stderr, "NO THREAD SUPPORT\n");
+      exit(0);
+    }
+
+
     char graphFilename[FNAME_LEN] = "\0";
     bool should_read_graph=false;
     bool should_gen_rmat=false;
