@@ -15,8 +15,6 @@
 
 #define UINT32_MAX  (0xffffffff)
 #define UINT64_MAX  (0xffffffffffffffff)
-#define MPI_UNITE_REQUEST  1
-#define MPI_UNITE_RESPONSE 2
 
 
 using namespace std;
@@ -146,83 +144,164 @@ extern "C" void init_mst(graph_t *G) {
     if(edges_to_send) free(edges_to_send);
 }
 
-vertex_id_t find(full_edge_t* full_edges, vertex_id_t i, graph_t* G)
+// vertex_id_t find(full_edge_t* full_edges, vertex_id_t i, graph_t* G)
+// {
+//   vertex_id_t new_i;
+//   // printf("full_edges[%u].end=%u\n", i, full_edges[i].end);
+//
+//   while(!full_edges[i].end){
+//     // printf("i= %u\n", i);
+//     new_i = full_edges[i].parent;
+//     full_edges[i].parent = full_edges[new_i].parent;
+//     i = full_edges[new_i].parent;
+//   }
+//   // printf("full_edges[%u].parent=%u\n", i, full_edges[i].parent);
+//   // fflush(stdout);
+//   return i;
+//
+//   // return full_edges[i].parent;
+//   // return VERTEX_OWNER(i, G->n, G->nproc);
+// }
+
+vertex_id_t find(full_edge_t* edges, vertex_id_t i, graph_t* G)
 {
   vertex_id_t new_i;
-  // printf("full_edges[%u].end=%u\n", i, full_edges[i].end);
-
-  while(!full_edges[i].end){
-    // printf("i= %u\n", i);
-    new_i = full_edges[i].parent;
-    full_edges[i].parent = full_edges[new_i].parent;
-    i = full_edges[new_i].parent;
+  while(i != edges[i].parent){
+    new_i = edges[i].parent;
+    edges[i].parent = edges[new_i].parent;
+    i = edges[new_i].parent;
   }
-  // printf("full_edges[%u].parent=%u\n", i, full_edges[i].parent);
-  // fflush(stdout);
   return i;
-
-  // return full_edges[i].parent;
-  // return VERTEX_OWNER(i, G->n, G->nproc);
 }
 
-vertex_id_t find_in_edges(foreign_edges_t* foreign_edges, vertex_id_t i, graph_t* G)
+edge_id_t find_in_edges(edge_id_t* parents, edge_id_t i, graph_t* G)
 {
-  vertex_id_t new_i;
-  while(i != foreign_edges[i].parent){
-    new_i = foreign_edges[i].parent;
-    foreign_edges[i].parent = foreign_edges[new_i].parent;
-    i = foreign_edges[new_i].parent;
+  edge_id_t new_i;
+  while(parents[i] != i){
+    new_i = parents[i];
+    parents[i] = parents[new_i];
+    i = parents[new_i];
   }
-  return G->endV[i];
+  return i;
 }
+
+vertex_id_t component_from_find(full_edge_t* edges, vertex_id_t i, vertex_id_t first_vertex,
+                                graph_t* G, edge_id_t* edge_parents, map <vertex_id_t, edge_id_t> &edges_map){
+  vertex_id_t from_find = find(edges, i, G);
+  vertex_id_t foreign = edges[from_find].foreign;
+  vertex_id_t component;
+  if(foreign == UINT32_MAX){
+    component = first_vertex + from_find;
+  }else{
+    component = G->endV[find_in_edges(edge_parents,edges_map.find(foreign)->second,G)];
+    edges[i].foreign = component;
+  }
+  return component;
+}
+
+vertex_id_t merge_ask(full_edge_t* full_edges, vertex_id_t from, graph_t* G, int p,
+               edge_id_t *edge_parents, map <vertex_id_t, edge_id_t> &edges,
+               bool &changed, vertex_id_t cheapest_received_from = 0){
+  // vertex_id_t from = i;
+  // vertex_id_t from = i;
+  vertex_id_t first_vertex = VERTEX_TO_GLOBAL(0, G->n, G->nproc, G->rank);
+  vertex_id_t to;
+  vertex_id_t to_with_source[2];
+  // MPI_Barrier(MPI_COMM_WORLD);
+  // exit(0);
+  if(p == G->rank){
+    vertex_id_t local_from = from - first_vertex;
+    to = full_edges[local_from].to;
+    auto found = edges.find(to);
+
+    // edge_id_t edge = find_in_edges(edge_parents, found->second, G);
+    // to = G->endV[edge];
+    if(found != edges.end()){
+      edge_id_t edge = find_in_edges(edge_parents, found->second, G);
+      to = G->endV[edge];
+    }
+    else{
+      printf("NOT FOUND %u rank = %d\n", from, G->rank);
+      fflush(stdout);
+    }
+
+    to_with_source[0] = to;
+    to_with_source[1] = cheapest_received_from;
+
+    MPI_Bcast( to_with_source, 2, MPI_UINT32_T, p, MPI_COMM_WORLD );
+    if(VERTEX_OWNER(to, G->n, G->nproc) == p){
+      // edge_id_t edge = find_in_edges(edge_parents, edges.find(to)->second, G);
+      // to = G->endV[edge];
+
+      full_edges[local_from].parent = to;
+    }
+    else{
+      full_edges[local_from].foreign = to;
+    }
+  }
+  else{
+    MPI_Bcast( to_with_source, 2, MPI_UINT32_T, p, MPI_COMM_WORLD );
+    to = to_with_source[0];
+  }
+  if(from == to || to == UINT32_MAX){
+    return UINT32_MAX;
+  }
+  changed = true;
+  if(G->rank == 0){
+    printf("MERGE %u TO %u | received_from=%u \n", from, to, to_with_source[1]);
+  }
+
+  auto found_from = edges.find(from);
+  auto found_to = edges.find(to);
+  if(found_from == edges.end()){
+    return UINT32_MAX;
+  }
+
+  if(found_to == edges.end()){
+    edges.insert( pair<vertex_id_t,edge_id_t>(found_to->first, found_from->second) );
+    printf("DDDDDDDDDDD=%d\n", G->rank);
+
+    G->endV[found_from->second] = found_to->first;
+  }else{
+    // printf("RANK=%d  found_from_first=%u found_to_first=%u found_from=%u found_to=%u\n",
+    // G->rank, found_from->first, found_to->first, found_from->second, found_to->second);
+    edge_parents[found_from->second] = found_to->second;
+  }
+  return to_with_source[1];
+  // edges.erase(found_from);
+}
+
+
+// void merge_answer(int p){
+//   MPI_Bcast( &to, 1, MPI_UINT32_T, p, MPI_COMM_WORLD );
+//
+// }
+
+
+// void forward_ffff(){
+//
+// }
 
 extern "C" void* MST_boruvka(graph_t *G) {
     int rank = G->rank, size = G->nproc;
     bool changed;
     full_edge_t *full_edges = new full_edge_t[G->local_n];
+    edge_id_t *edge_parents = new edge_id_t[G->local_m];
     bool *added_edges = new bool[G->local_m];
     memset(added_edges,0,G->local_m * sizeof(bool));
-    map <vertex_id_t, edge_id_t> foreign_components;
-    foreign_edges_t *foreign_edges = new foreign_edges_t[G->local_m];
+    map <vertex_id_t, edge_id_t> edges;
 
-    from_to_t *all = new from_to_t[size];
-    from_to_t *recv_all = new from_to_t[size];
-    from_to_t *all_result = new from_to_t[size];
-    vertex_id_t *send_to = new vertex_id_t[size];
-    MPI_Request *requests = new MPI_Request[G->local_n];
-    MPI_Status *statuses = new MPI_Status[G->local_n];
+    // print_source_graph(G);
 
-    vertex_id_t receive_count;
-    int *recounts = new int[size];
-    for(int i=0; i < size; i++ ){
-      recounts[i] = 1;
-    }
-
-    print_source_graph(G);
-
-
-    int nitems = 2;
-    int blocklengths[nitems] = {1,1};
-    MPI_Datatype types[nitems] = {MPI_UINT32_T, MPI_UINT32_T};
-    MPI_Datatype mpi_edge;
-    MPI_Aint     offsets[nitems];
-
-    offsets[0] = offsetof(from_to_t, from);
-    offsets[1] = offsetof(from_to_t, to);
-    // offsets[2] = offsetof(rank_comparator_t, rank);
-
-    MPI_Type_create_struct(nitems, blocklengths, offsets, types, &mpi_edge);
-    MPI_Type_commit(&mpi_edge);
-
-    int weight_nitems = 3;
-    int weight_blocklengths[weight_nitems] = {1,1,1};
-    MPI_Datatype weight_types[weight_nitems] = {MPI_UINT32_T, MPI_UINT32_T, MPI_DOUBLE};
+    int weight_nitems = 2;
+    int weight_blocklengths[weight_nitems] = {1,1};
+    MPI_Datatype weight_types[weight_nitems] = {MPI_UINT32_T, MPI_DOUBLE};
     MPI_Datatype mpi_weight;
     MPI_Aint     weight_offsets[weight_nitems];
 
-    weight_offsets[0] = offsetof(from_to_with_weight_t, from);
-    weight_offsets[1] = offsetof(from_to_with_weight_t, to);
-    weight_offsets[2] = offsetof(from_to_with_weight_t, weight);
+    weight_offsets[0] = offsetof(to_weight_t, to);
+    // weight_offsets[1] = offsetof(to_weight_t, rank);
+    weight_offsets[1] = offsetof(to_weight_t, weight);
 
     MPI_Type_create_struct(weight_nitems, weight_blocklengths, weight_offsets, weight_types, &mpi_weight);
     MPI_Type_commit(&mpi_weight);
@@ -232,36 +311,48 @@ extern "C" void* MST_boruvka(graph_t *G) {
     vertex_id_t first_vertex = VERTEX_TO_GLOBAL(0, G->n, G->nproc, G->rank);
 
     for(vertex_id_t i = 0; i < G->local_n; i++){
-      full_edges[i].parent =  first_vertex + i;
-      full_edges[i].end =  true;
-      // full_edges[i].rank = 0;
+      full_edges[i].rank = 0;
+      full_edges[i].parent = i;
+      full_edges[i].foreign = UINT32_MAX;
     }
 
     for(edge_id_t i = 0; i < G->local_m; i++){
       vertex_id_t vertex = G->endV[i];
-      if(VERTEX_OWNER(vertex, G->n, G->nproc) == rank){
-        // foreign_edges[i].parent = i;
-        continue;
-      }
-      auto  found = foreign_components.find(vertex);
-      if(found == foreign_components.end()){
-        foreign_components.insert( pair<vertex_id_t,edge_id_t>(vertex,i) );
-        foreign_edges[i].parent = i;
-        foreign_edges[i].home_reference = UINT32_MAX;
+      // if(VERTEX_OWNER(vertex, G->n, G->nproc) == rank){
+      //   // foreign_edges[i].parent = i;
+      //   foreign_edges[i].parent = i;
+      //   foreign_edges[i].end = true;
+      //   continue;
+      // }
+      auto found = edges.find(vertex);
+      if(found == edges.end()){
+        edges.insert( pair<vertex_id_t,edge_id_t>(vertex,i) );
+        edge_parents[i] = i;
+        // printf("new %i", )
 
       }else{
-        foreign_edges[i].parent = found->second;
+        edge_parents[i] = found->second;
       }
     }
 
 
-    vertex_id_t iter  = 0;
-
+    vertex_id_t iter = 0;
+    fflush(stdout);
+    MPI_Barrier(MPI_COMM_WORLD);
     while(true){
+        if(G->rank == 0)
+          printf("iter %u\n", iter);
+        fflush(stdout);
+        MPI_Barrier(MPI_COMM_WORLD);
+        fflush(stdout);
+        if(iter == 10) {
+          fflush(stdout);
+          exit(0);
+        }
         bool changed = false;
         iter++;
         for(vertex_id_t i = 0; i < G->local_n; i++){
-          // full_edges[i].to = UINT32_MAX;
+          full_edges[i].to = UINT32_MAX;
           full_edges[i].weight = DBL_MAX;
 
         }
@@ -271,314 +362,185 @@ extern "C" void* MST_boruvka(graph_t *G) {
         // if(iter == 2) exit(1);
 
         // memset(count_to,0,size * sizeof(vertex_id_t));
-        for(int p = 0; p < size; p++){
-        if(p == rank){
-          // printf("rank = %d\n",rank );
         for(vertex_id_t i = 0; i < G->local_n; i++) {
           for (edge_id_t j = G->rowsIndices[i]; j < G->rowsIndices[i+1]; j++) {
 
-            vertex_id_t local_first =  find(full_edges, i, G);
-            vertex_id_t first_component_index =   full_edges[local_first].parent;
-            vertex_id_t second_component_index;
-            vertex_id_t vertex = G->endV[j];
-            if(vertex >= first_vertex && vertex < first_vertex + G->local_n )
-            second_component_index =  full_edges[find(full_edges, vertex - first_vertex, G)].parent;
-            else
-            second_component_index =   find_in_edges(foreign_edges, j, G); //G->endV[j]; //compute_second_component_index(full_edges, G, j);
+            vertex_id_t first_component_index =  find(full_edges, i, G);
+            vertex_id_t global_first_component_index = component_from_find(full_edges, first_component_index, first_vertex, G, edge_parents, edges);
+            // vertex_id_t second_vertex = G->endV[j];
+            vertex_id_t second_component_index = G->endV[find_in_edges(edge_parents,j,G)];
+
             // printf("BEGIN = %u |  %u %u\n", first_component_index, second_component_index, j);
             // printf("rank=%d REACHED\n", rank);
             // fflush(stdout);
+            if(first_component_index == UINT32_MAX){
+              // printf("MAX\n");
+            }
 
-
-            if (first_component_index == second_component_index){
+            if(global_first_component_index == second_component_index){
+              // printf("%u = %u FROM RANK %d\n",  VERTEX_TO_GLOBAL(i, G->n, G->nproc, G->rank), second_component_index, G->rank);
+              // fflush(stdout);
               continue;
             }
-            // first_component_index = VERTEX_TO_GLOBAL(i, G->n, G->nproc, G->rank) - VERTEX_TO_GLOBAL(0, G->n, G->nproc, G->rank);
-            // VERTEX_TO_GLOBAL(i, G->n, G->nproc, G->rank)
-            // printf("first_component_index = %u |  %u %u\n", first_component_index, second_component_index, j);
-            // edge_id_t edge = full_edges[local_first].edge;
 
-            if (full_edges[local_first].weight > G->weights[j]){
-              // printf("first_component_index = %u |  %u %u\n", VERTEX_TO_GLOBAL(i, G->n, G->nproc, G->rank), second_component_index, j);
-              full_edges[local_first].to = second_component_index;
-              full_edges[local_first].weight = G->weights[j];
-
+            // if ( (foreign == UINT32_MAX ? first_vertex + first_component_index : foreign)  == second_component_index){
+            //   continue;
+            // }
+            if(full_edges[first_component_index].weight > G->weights[j]){
+              full_edges[first_component_index].to = second_component_index;
+              full_edges[first_component_index].weight = G->weights[j];
+              full_edges[first_component_index].edge = j;
               // printf("!!!first_component_index = %u |  %u %u\n", VERTEX_TO_GLOBAL(i, G->n, G->nproc, G->rank), second_component_index, j);
             }
-            fflush(stdout);
             // assign_cheapest(full_edges, G, i, j);
+            // foreign
+            // ребро своё
+            //
+            //
           }
+          printf("full_edges[%u, p = %u] = %u\n", VERTEX_TO_GLOBAL(i, G->n, G->nproc, G->rank),
+          component_from_find(full_edges, i, first_vertex, G, edge_parents, edges), full_edges[i].to);
         }
-      }
-        MPI_Barrier(MPI_COMM_WORLD);
-      }
+        fflush(stdout);
 
 
-      // MPI_Barrier(MPI_COMM_WORLD);
-      memset(send_to,0,size * sizeof(vertex_id_t));
-      // MPI_Barrier(MPI_COMM_WORLD);
-
-
-      for(vertex_id_t i = 0; i < G->local_n; i++) {
-
-        // // printf("local_form begin\n");
-        // // fflush(stdout);
-        // MPI_Barrier(MPI_COMM_WORLD);
-
-        vertex_id_t local_from  =  find(full_edges,i,G);
-
-
-        full_edge_t *edge = &full_edges[local_from];
-
-        vertex_id_t p = edge->parent;
-        vertex_id_t to = edge->to;
-        weight_t weight = edge->weight;
-
-        int owner = VERTEX_OWNER(p, G->n, G->nproc);
-        if(owner == rank) continue;
-
-
-        // printf("rank = %d owner = %d local_from = %d \n",rank, owner, local_from);
-        // fflush(stdout);
-
-        {
-        // if(owner != rank){
-          from_to_with_weight_t w;
-          w.from = p;
-          w.to = to;
-          w.weight = weight;
-
-          MPI_Isend(&w, 1, mpi_weight, owner, 0, MPI_COMM_WORLD, &requests[local_from]);
-          send_to[owner]++;
-        }
-        // printf("END rank = %d owner = %d\n",rank, owner);
-        // fflush(stdout);
-        // MPI_Barrier(MPI_COMM_WORLD);
-
-      }
-      // MPI_Barrier(MPI_COMM_WORLD);
-      // exit(1);
-      // if(iter == 2) exit(1);
-
-
-      MPI_Reduce_scatter(send_to, &receive_count, recounts, MPI_UINT32_T, MPI_SUM, MPI_COMM_WORLD);
-
-      for(vertex_id_t i = 0; i < receive_count; i++) {
-        from_to_with_weight_t w;
-        MPI_Status status;
-        MPI_Recv(&w,1, mpi_weight, MPI_ANY_SOURCE, 0,MPI_COMM_WORLD,&status);
-        printf("!!!%d %u %u %lf\n", rank, w.from, w.to, w.weight);
-        vertex_id_t local_form = w.from - first_vertex;
-        if (full_edges[local_form].weight > w.weight){
-          // printf("first_component_index = %u |  %u %u\n", VERTEX_TO_GLOBAL(i, G->n, G->nproc, G->rank), second_component_index, j);
-          full_edges[local_form].to = w.to;
-          full_edges[local_form].weight = w.weight;
-
-          // printf("!!!first_component_index = %u |  %u %u\n", VERTEX_TO_GLOBAL(i, G->n, G->nproc, G->rank), second_component_index, j);
-        }
-      }
-      // for(vertex_id_t i = 0; i < G->local_n; i++) {
-      //
-      //   vertex_id_t p = full_edges[find(full_edges,i,G)].parent;
-      //   int owner = VERTEX_OWNER(p, G->n, G->nproc);
-      //   send_to[owner]++;
-      //   // printf("rank = %d f = %u |  %u\n", rank, 0, full_edges[i].edge);
-      //
-      //   // printf("rank = %d %u --- %u %u\n", rank, full_edges[find(full_edges,i,G)].parent,
-      //   // find_in_edges(foreign_edges, full_edges[i].edge, G), full_edges[i].edge);
-      //
-      // }
-      //
-
-
-
-      // if(iter == 2) exit(1);
-        for (vertex_id_t i=0; i < G->local_n; i++)
-        {
-            // printf("HERE 1 %d\n", omp_get_num_threads());
-            // edge_id_t edge = full_edges[i].edge;
-            vertex_id_t in_requests = 0, first_component_index, second_component_index;
-            for(vertex_id_t i = 0; i < size; i++){
-              all[i].from = UINT32_MAX;
-              all[i].to = UINT32_MAX;
-              recv_all[i].from = UINT32_MAX;
-              recv_all[i].to = UINT32_MAX;
-              all_result[i].from = UINT32_MAX;
-              all_result[i].to = UINT32_MAX;
-            }
-            if (full_edges[i].weight != DBL_MAX && full_edges[i].parent == first_vertex + i)
-            {
-                printf("%d rank\n",rank );
-                first_component_index = full_edges[find(full_edges, i,G)].parent;
-                // vertex_id_t second_component_index = G->endV[edge]; //compute_second_component_index(full_edges, G, edge);
-
-                second_component_index;
-                vertex_id_t vertex =  full_edges[i].to; //G->endV[edge];
-                if(vertex >= first_vertex && vertex < first_vertex + G->local_n )
-                second_component_index =  full_edges[find(full_edges, G->endV[foreign_components.find(vertex)->second] - first_vertex, G)].parent;
-                else
-                second_component_index =   find_in_edges(foreign_edges, foreign_components.find(vertex)->second, G);
-                if (first_component_index == second_component_index){
-                  continue;
-                }
-                // changed = true;
-                // for(vertex_id_t i = 0; i < size; i++){
-                //   all[i].from = UINT32_MAX;
-                //   all[i].to = UINT32_MAX;
-                //   recv_all[i].from = UINT32_MAX;
-                //   recv_all[i].to = UINT32_MAX;
-                //   all_result[i].from = UINT32_MAX;
-                //   all_result[i].to = UINT32_MAX;
-                // }
-                int owner = VERTEX_OWNER(second_component_index, G->n, G->nproc);
-                all[owner].from = first_component_index;
-                all[owner].to = second_component_index;
-              }
-                // memset(in_requests,0,G->local_n * sizeof(vertex_id_t));
-                MPI_Alltoall(all, 1, mpi_edge, recv_all, 1, mpi_edge,MPI_COMM_WORLD);
-              from_to_t f;
-              f.from = f.to = UINT32_MAX;
-              if (full_edges[i].weight != DBL_MAX && full_edges[i].parent == first_vertex + i)
-              {
-                for(vertex_id_t a = 0; a  < size;a++){
-                  if(recv_all[a].to == first_component_index &&
-                    !(recv_all[a].from == second_component_index && first_component_index < second_component_index)  ){
-                    in_requests++;
+        for(int p = 0; p < G->nproc; p++) {
+          if(p == G->rank){
+            for(vertex_id_t i = 0; i < G->local_n; i++) {
+              // printf("RANK= %d trying %u\n", G->rank, first_vertex + i);
+              full_edge_t *cur_full_edge = &full_edges[i];
+              if(cur_full_edge->foreign == UINT32_MAX){
+                vertex_id_t cur_vertex = first_vertex + i;
+                MPI_Bcast( &cur_vertex, 1, MPI_UINT32_T, p, MPI_COMM_WORLD );
+                to_weight_t received_to_weight;
+                MPI_Status status;
+                vertex_id_t cheapest_received_from = G->rank;
+                for(int p = 0; p < G->nproc - 1; p++) {
+                  MPI_Recv(&received_to_weight, 1,mpi_weight, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
+                  if(received_to_weight.to != UINT32_MAX && received_to_weight.weight < cur_full_edge->weight){
+                    cur_full_edge->to = received_to_weight.to;
+                    cur_full_edge->weight = received_to_weight.weight;
+                    cheapest_received_from = status.MPI_SOURCE;
+                    // cur_full_edge->foreign_rank = received_to_weight.rank;
                   }
                 }
-
-
-                if(in_requests == 0){
-                  f.from = first_component_index;
-                  f.to = second_component_index;
-                  printf("%u request = %u  \n",  VERTEX_TO_GLOBAL(i, G->n, G->nproc, G->rank),
-                  full_edges[i].to);
-                }
-              }
-                MPI_Allgather(&f, 1, mpi_edge, all_result, 1, mpi_edge, MPI_COMM_WORLD);
-              if (full_edges[i].weight != DBL_MAX && full_edges[i].parent == first_vertex + i)
-              {
-
-                for(vertex_id_t k=0;  k < size; k++){
-                  vertex_id_t from = all_result[k].from;
-                  vertex_id_t to = all_result[k].to;
-                  // printf("PREFINISHED RANK = %d with k = %d %u -> %u \n", rank, k, from, to);
-
-                  // if(from == UINT32_MAX) continue;
-                  if(from != UINT32_MAX){
-
-                    changed = true;
-                  if( VERTEX_OWNER(from, G->n, G->nproc) == rank){
-                      vertex_id_t local_from = from - first_vertex;
-                      if( VERTEX_OWNER(to, G->n, G->nproc) == rank){
-                        full_edges[local_from].parent = to;
-                        full_edges[local_from].end = false;
-                      }else{
-                        auto to_pair = foreign_components.find(to);
-                        edge_id_t edge = to_pair -> second;
-                        full_edges[local_from].parent = to;
-                        foreign_edges[edge].home_reference = from;
-                      }
-                      // printf("dawdwad %u\n", find(full_edges, from - first_vertex,G));
-                  }else{
-                    auto from_pair = foreign_components.find(from);
-                    if(from_pair == foreign_components.end()) continue;
-                    edge_id_t from_edge = from_pair -> second;
-
-                    auto to_pair = foreign_components.find(to);
-                    if(to_pair == foreign_components.end()){
-                      foreign_components.insert(pair <vertex_id_t, edge_id_t>(to,from_edge));
-                      G->endV[from_edge] = to;
-                    }else{
-                      foreign_edges[from_edge].parent = to_pair -> second;
-                    }
-                  }
-                  }
-                  // printf("FINISHED RANK = %d\n", rank);
-                  // fflush(stdout);
-                  // MPI_Barrier(MPI_COMM_WORLD);
-
-                  // if(rank == 0){
-                  //   printf("from = %u to = %u \n", all_result[k].from, all_result[k].to);
-                  // }
+                // printf("rank=%d my=%u merge with=%u\n", G->rank,VERTEX_TO_GLOBAL(i, G->n, G->nproc, G->rank),cur_full_edge->to);
+                vertex_id_t source = merge_ask(full_edges, cur_vertex, G, p, edge_parents, edges, changed, cheapest_received_from);
+                if(source == G->rank){
+                  added_edges[full_edges[i].edge] = true;
                 }
 
-
-                // if(rank == 0)
-                // printf("rank = %d ff= %u \n",rank, full_edges[0].parent);
-                // fflush(stdout);
-                // MPI_Barrier(MPI_COMM_WORLD);
                 //
-                // printf("rank = %d rr= %u \n",rank, find(full_edges, 0, G));
-                // fflush(stdout);
-                // MPI_Barrier(MPI_COMM_WORLD);
-                // exit(0);
-
-                // printf("!!!!! first_component_index = %u |  %u %u\n", VERTEX_TO_GLOBAL(i, G->n, G->nproc, G->rank), second_component_index, edge);
-
-                // MPI_Send(&comparator, 1, mpi_edge, VERTEX_OWNER(second_component_index, G->n, G->nproc), MPI_UNITE_REQUEST, MPI_COMM_WORLD);
-                // printf("SEND MAIN\n");
-                // MPI_Recv(&receive_comparator, 1, mpi_edge, VERTEX_OWNER(second_component_index, G->n, G->nproc), MPI_UNITE_RESPONSE, MPI_COMM_WORLD, &status);
-                // printf("RECV MAIN\n");
-
-                // if()
-
-
-                // if(unite_request(full_edges, first_component_index, second_component_index, G)){
-                //   added_edges[edge] = true;
-                // }
+                // MPI_Bcast( &cur_full_edge->parent, 1, MPI_UINT32_T, p, MPI_COMM_WORLD );
+              }
             }
+            MPI_Bcast( &G->n, 1, MPI_UINT32_T, p, MPI_COMM_WORLD );
+          }
+          else{
+            vertex_id_t component = 0;
+            // printf("HERE=%d\n", G->rank );
+            // fflush(stdout);
+
+            while(true){
+              MPI_Bcast( &component, 1, MPI_UINT32_T, p, MPI_COMM_WORLD );
+              // printf("HERE=%d\n", G->rank );
+              // fflush(stdout);
+              if(component == G->n) break;
+              to_weight_t to_weight;
+              vertex_id_t index = UINT32_MAX;
+              for(vertex_id_t i = 0; i < G->local_n; i++) {
+                // if(full_edges[i].foreign == component)
+                // printf("comp1 %d\n", G->rank);
+                if(component_from_find(full_edges, i, first_vertex, G, edge_parents, edges) == component)
+                {
+                  index = i;
+                }
+                // printf("comp2 %d\n", G->rank);
+
+              }
+              edge_id_t edge;
+              if(index == UINT32_MAX){
+                // printf("NOT FOUND rank=%d NOT FOUND for component=%u\n", G->rank, component );
+                // fflush(stdout);
+
+                to_weight.to = UINT32_MAX;
+              }else{
+                // vertex_id_t home = find_in_edges(foreign_edges, found->second, G).home_reference;
+                // full_edges[home]
+                // vertex_id_t index = found -> first;
+                // printf("FOUND rank=%d to=%u for component=%u\n", G->rank,full_edges[index].to, component);
+                fflush(stdout);
+
+                vertex_id_t to = full_edges[index].to;
+                edge = find_in_edges(edge_parents, edges.find(to)->second, G);
+                to = G->endV[edge];
+                if(to == component){
+                  // printf("OLD rank=%d to=%u for component=%u\n", G->rank, to, component);
+                  to_weight.to = UINT32_MAX;
+                }else{
+                  // printf("FOUND rank=%d to=%u for component=%u\n", G->rank, to, component);
+                  to_weight.to =  full_edges[index].to;//first_vertex + home;//full_edges[home].to;
+                  to_weight.weight = full_edges[index].weight;
+                }
+                // to_weight.rank = full_edges[index].rank;
+
+              }
+              MPI_Send(&to_weight, 1,mpi_weight,p, 0,MPI_COMM_WORLD);
+              // merge_answer(component, p);
+
+              vertex_id_t source = merge_ask(full_edges, component, G, p, edge_parents, edges, changed);
+              if(source == G->rank){
+                added_edges[edge] = true;
+              }
+
+
+              // for(vertex_id_t i = 0; i < G->local_n; i++) {
+              //
+              // }
+            };
+
+          }
+          MPI_Barrier(MPI_COMM_WORLD);
         }
-        // printf("HERWEW\n");
-        // MPI_Barrier(MPI_COMM_WORLD);
-        // printf("HERWEW2\n");
-
-
-            // printf("HERE\n");
-
-            // #pragma omp flush(continue_find)
-
-        printf("FINAL %d\n", rank);
-
-        // for(vertex_id_t i=0; i < G->local_n; i++){
-        //  printf("%u request = %u edge = %u \n",  VERTEX_TO_GLOBAL(i, G->n, G->nproc, G->rank),   G->endV[full_edges[i].edge], full_edges[i].edge);
-        // }
-
-        // MPI_Barrier(MPI_COMM_WORLD);
         // exit(0);
-        // for(vertex_id_t i=0; i < size; i++){
-          // MPI_Alltoall(count_to,1, MPI_UINT32_T, receive_from,1, MPI_UINT32_T,MPI_COMM_WORLD);
-          // vertex_id_t
-          // for(vertex_id_t i=0; i < size; i++){
-          //   printf("%d receive from %u = %u\n", G->rank,i, receive_from[i]);
-          // }
-          // /
-          // / MPI_Isend(&count_to[i], 1, MPI_UINT32_T, i, 0, MPI_COMM_WORLD);
-        // }
 
-        // exit(0);
-    //
+        MPI_Barrier(MPI_COMM_WORLD);
+
+
     map <vertex_id_t,vertex_id_t> components_map;
 
 
     if(!changed){
       trees.clear();
-      for(vertex_id_t i = 0; i < G->local_n;i++){
-        vertex_id_t component = find(full_edges, i, G);
-        if(i != component) continue;
-        trees.push_back(vector<edge_id_t>());
-        components_map.insert(pair <vertex_id_t, vertex_id_t>(component,trees.size() - 1));
-      }
+      printf("CHANGED \n ");
+      MPI_Barrier(MPI_COMM_WORLD);
+
+      // for(vertex_id_t i = 0; i < G->local_n;i++){
+      //   if(i + first_vertex != component) continue;
+      //   trees.push_back(vector<edge_id_t>());
+      //   components_map.insert(pair <vertex_id_t, vertex_id_t>(component,trees.size() - 1));
+      // }
+      // printf("CHANGED SECOND \n ");
+      // MPI_Barrier(MPI_COMM_WORLD);
+      //
+      trees.push_back(vector<edge_id_t>());
+
       for(edge_id_t i = 0; i < G->local_m; i++){
         edge_id_t edge = i;
-        if(!added_edges[edge])
+        if(!added_edges[edge]){
           continue;
-        vertex_id_t component = find(full_edges, G->endV[edge], G);
-        auto addr = components_map.find(component);
-        trees[addr->second].push_back(edge_to_global(edge,G));
+        }
+        // printf("CHANGED edge=%u rank=%d\n ", i, G->rank);
+        // vertex_id_t component = find(full_edges, G->endV[edge], G);
+        // auto addr = components_map.find(component);
+        trees[0].push_back(edge_to_global(edge,G));
+        // trees[addr->second].push_back(edge_to_global(edge,G));
       }
+      printf("END rank=%d\n ",  G->rank);
+
       free(full_edges);
       free(added_edges);
+      fflush(stdout);
       return &trees;
     }
   }
