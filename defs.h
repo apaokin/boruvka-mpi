@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <inttypes.h>
+#include <vector>
 
 #define DEFAULT_ARITY 16
 #define SMALL_COMPONENT_EDGES_THRESHOLD   2
@@ -15,6 +16,7 @@
 typedef uint32_t vertex_id_t;
 typedef uint64_t edge_id_t;
 typedef double weight_t;
+typedef std::vector<std::vector<edge_id_t > > result_t;
 
 /* The graph data structure*/
 
@@ -31,6 +33,7 @@ typedef struct
   // vertex_id_t vertex;
   vertex_id_t parent;
   vertex_id_t foreign;
+  vertex_id_t cheapest_rank_to;
   // vertex_id_t  end;
 
   // vertex_id_t request;
@@ -59,6 +62,7 @@ typedef struct
 
 typedef struct
 {
+  vertex_id_t from_component;
   vertex_id_t to;
   // vertex_id_t rank;
   weight_t weight;
@@ -147,9 +151,10 @@ void freeGraph(graph_t *G);
 
 /* Minimum spanning tree */
 EXTERN_DECL void* MST (graph_t *G);
-EXTERN_DECL void* MST_boruvka (graph_t *G);
+EXTERN_DECL void MST_boruvka (graph_t *G, result_t &trees);
 
-EXTERN_DECL void convert_to_output(graph_t *G, void *result, forest_t* output);
+EXTERN_DECL void convert_to_output(graph_t *G, result_t &result, forest_t* output);
+EXTERN_DECL void convert_to_output_old(graph_t *G, void *result, forest_t* output);
 
 /* initialize algorithm memory */
 EXTERN_DECL void init_mst(graph_t *G);

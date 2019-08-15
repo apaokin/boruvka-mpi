@@ -7,8 +7,10 @@
 #include <stdarg.h>
 #include <assert.h>
 #include "defs.h"
+#include <vector>
 
 using namespace std;
+typedef vector<vector<edge_id_t > > result_t;
 
 char outFilename[FNAME_LEN];
 int nIters = 64;
@@ -167,24 +169,40 @@ int main(int argc, char **argv)
     init(argc, argv, &g);
 
     init_mst(&g);
+    result_t trees;
     perf = (double *)malloc(nIters * sizeof(double));
-    void* result = 0;
-
+    // void* result = 0;
+    edge_id_t* endv_buf = new edge_id_t[g.local_m];
+    // memcpy(endv_buf, g.endV, g.local_m * sizeof(edge_id_t));
+    for(edge_id_t j = 0; j < g.local_m; j++){
+      endv_buf[j] = g.endV[j];
+    }
     print0(g.rank,"start algorithm iterations...\n");
     for (int i = 0; i < nIters; ++i) {
         print0(g.rank,"\tMST %d\t ...",i);
         MPI_Barrier(MPI_COMM_WORLD);
         start_ts = MPI_Wtime();
-        result = MST_boruvka(&g);
+        // result = MST_boruvka(&g, trees);
+        MST_boruvka(&g, trees);
+        // printf("entered %d\n", g.rank);
+        // fflush(stdout);
+        // MPI_Barrier(MPI_COMM_WORLD);
+        // fflush(stdout);
+
+        // memcpy(g.endV, endv_buf, g.local_m * sizeof(edge_id_t));
         finish_ts = MPI_Wtime();
+        for(edge_id_t j = 0; j < g.local_m; j++){
+          g.endV[j] = endv_buf[j];
+        }
         double time = finish_ts - start_ts;
         perf[i] = g.m / (1000000 * time);
         print0(g.rank,"\tfinished. Time is %.4f secs\n", time);
     }
+    free(endv_buf);
     MPI_Barrier(MPI_COMM_WORLD);
     print0(g.rank,"algorithm iterations finished.\n");
 
-    convert_to_output(&g, result, &trees_output);
+    convert_to_output(&g, trees, &trees_output);
 
     print0(g.rank,"converting finished\n");
     write_output_information(&trees_output, outFilename);
@@ -208,7 +226,7 @@ int main(int argc, char **argv)
     MPI_Reduce(&avg_perf, &global_avg_perf, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
     print0(g.rank,"%s: vertices = %" PRIu32 " edges = %" PRIu64 " trees = %zu nIters = %d MST performance min = %.4f avg = %4f max = %.4f MTEPS\n",g.filename, g.n, g.m, trees_output.numTrees, nIters, min_perf, avg_perf, max_perf);
     print0(g.rank,"Performance = %.4f MTEPS\n", avg_perf);
-
+    free(perf);
     finalize_mst(&g);
     freeGraph(&g);
     MPI_Finalize();

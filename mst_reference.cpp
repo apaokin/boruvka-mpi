@@ -18,9 +18,9 @@ typedef struct
 
 extern "C" void init_mst(graph_t *G)
 {
-}   
+}
 
-/* MST reference implementation. Prim's algorithm 
+/* MST reference implementation. Prim's algorithm
  * NOTE: isolated vertex is also tree, such tree must be represented as separate element of trees vector with zero-length edges list */
 typedef vector<vector<edge_id_t > > result_t;
 result_t trees;
@@ -75,9 +75,9 @@ extern "C" void* MST(graph_t *G)
     return &trees;
 }
 
-/* NOTE: isolated vertex is also tree, such tree must be represented as separate element of trees_mst vector with zero-length edges list 
+/* NOTE: isolated vertex is also tree, such tree must be represented as separate element of trees_mst vector with zero-length edges list
  * FIXME: If you change MST output data structure, you must change this function */
-extern "C" void convert_to_output(graph_t *G, void* result, forest_t *trees_output)
+extern "C" void convert_to_output_old(graph_t *G, void* result, forest_t *trees_output)
 {
     result_t &trees_mst = *reinterpret_cast<result_t*>(result);
     trees_output->p_edge_list = (edge_id_t *)malloc(trees_mst.size()*2 * sizeof(edge_id_t));
@@ -97,7 +97,7 @@ extern "C" void convert_to_output(graph_t *G, void* result, forest_t *trees_outp
             k++;
         }
     }
-     
+
     trees_output->numTrees = trees_mst.size();
     trees_output->numEdges = number_of_edges;
 }
@@ -105,4 +105,3 @@ extern "C" void convert_to_output(graph_t *G, void* result, forest_t *trees_outp
 extern "C" void finalize_mst(graph_t *G)
 {
 }
-
