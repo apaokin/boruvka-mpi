@@ -22,10 +22,6 @@ using namespace std;
 // map <vertex_id_t,vertex_id_t> components_map;
 typedef map <vertex_id_t, loc_edge_t>  mapT;
 
-//FIRST
-//
-//v1 want to connect to v2
-// v1
 void print_source_graph(graph_t *G)
 {
   for(int p=0; p < G->nproc; p++){
@@ -107,7 +103,6 @@ extern "C" void convert_to_output(graph_t *G, result_t &trees_mst, forest_t *tre
           number_of_edges+= count - 1;
           map <vertex_id_t,vertex_id_t>::iterator found = components_map.find(component);
           if(found == components_map.end()){
-            // printf("component= %u\n", component);
             components_map.insert(pair<vertex_id_t, vertex_id_t>(component, components_count));
             trees_mst.push_back(vector<edge_id_t>());
             trees_mst[components_count].push_back(component);
@@ -237,22 +232,6 @@ void main_merge(full_edge_t* full_edges,vertex_id_t* broadcast_results, graph_t*
       broadcast_results[results_count + 2] = cheapest_received_from;
       results_count+=3;
       continue;
-      // if(cheapest_received_from == G->rank && found_from != edges.end() &&
-      //    found_from->second.local != UINT32_MAX){
-      //   vertex_id_t old_local_to = full_edges[found_from->second.local].to;
-      //
-      //   if(from == old_local_to){
-      //     continue;
-      //   }
-      //   to = from;
-      //   from = old_local_to;
-      //   found_from = edges.find(from);
-      //   found_to = edges.find(to);
-      //   continue;
-      // }else{
-      //   continue;
-      // }
-
     }
 
     if(found_from == edges.end()){
@@ -361,49 +340,14 @@ void merge_ask(full_edge_t* full_edges,vertex_id_t* broadcast_results, vertex_id
     mapT::iterator found_to = edges.find(to);
 
     mapT::iterator found_from = edges.find(from);
-    // if(found_to != edges.end() && found_to->second.edge != UINT64_MAX ){
-    //   edge_id_t edge = find_in_edges(edge_parents, found_to->second.edge, G);
-    //   if(G->endV[edge] != to){
-    //     to = G->endV[edge];
-    //     found_to = edges.find(to);
-    //   };
-    // }
-    //
-
     if(to == UINT32_MAX){
       continue;
     }
     if(from == to){
       continue;
-      // if(cheapest_received_from == G->rank && found_from != edges.end() &&
-      //    found_from->second.local != UINT32_MAX){
-      //   vertex_id_t old_local_to = full_edges[found_from->second.local].to;
-      //
-      //   if(from == old_local_to){
-      //     continue;
-      //   }
-      //   to = from;
-      //   from = old_local_to;
-      //   found_from = edges.find(from);
-      //   found_to = edges.find(to);
-      //   continue;
-      // }else{
-      //   continue;
-      // }
-
     }
     if(found_from == edges.end()){
-
       continue;
-      // loc_edge_t loc_edge;
-      // loc_edge.local = UINT32_MAX;
-      // loc_edge.edge = UINT64_MAX;
-      // if(found_to != edges.end()){
-      //   edges.insert( pair<vertex_id_t, loc_edge_t>(from, loc_edge) );
-      //   found_from = edges.find(from);
-      // }else{
-      //   continue;
-      // }
     }
     if(found_to == edges.end()){
       loc_edge_t loc_edge;
@@ -534,9 +478,6 @@ extern "C" void MST_boruvka(graph_t *G, result_t &trees) {
             if(global_first_component_index == second_component_index){
               continue;
             }
-            // changed = true;
-            // if(G->rank == 12){
-            // }
             if(full_edges[first_component_index].weight > G->weights[j]){
               full_edges[first_component_index].to = second_component_index;
               full_edges[first_component_index].weight = G->weights[j];
@@ -558,54 +499,14 @@ extern "C" void MST_boruvka(graph_t *G, result_t &trees) {
                 vertex_id_t local_from = to_weight->from_component - first_vertex;
                 if(full_edges[local_from].weight > to_weight -> weight){
                   vertex_id_t to = to_weight -> to;
-                  // if(full_edges[local_from].foreign == to){
-                  // // if(to_weight->from_component == to){
-                  //   full_edges[local_from].to = UINT32_MAX;
-                  // }else{
-                    full_edges[local_from].weight = to_weight -> weight;
-                    full_edges[local_from].to = to;
-                    full_edges[local_from].cheapest_rank_to = cheapest_rank_to;
-                  //
-                  // }
+                  full_edges[local_from].weight = to_weight -> weight;
+                  full_edges[local_from].to = to;
+                  full_edges[local_from].cheapest_rank_to = cheapest_rank_to;
                 }
               }
             }
             vertex_id_t count = 0;
-            // for(vertex_id_t i = 0; i < G->local_n; i++) {
-            //   if(full_edges[i].foreign != i + first_vertex){
-            //     continue;
-            //   }
-            //   // printf("BEFORE rank =%d from=%u to=%u received_rank=%u\n",G->rank, i + first_vertex, full_edges[i].to, full_edges[i].cheapest_rank_to );
-            //   mapT::iterator found = edges.find(full_edges[i].to);
-            //   if(found != edges.end() && found->second.edge != UINT64_MAX ){
-            //     edge_id_t edge = find_in_edges(edge_parents, found->second.edge, G);
-            //     if(full_edges[i].to != G->endV[edge]){
-            //       if(G->rank == 0 && (i + first_vertex == 16 || full_edges[i].to == 16) ){
-            //         // printf("TO CHANGED FROM %u TO %u\n",full_edges[i].to,  G->endV[edge] );
-            //       }
-            //       full_edges[i].to = G->endV[edge];
-            //     }
-            //
-            //   }
-            //   if((i + first_vertex == 16 || full_edges[i].to == 16) && G->rank == 0){
-            //     // printf(" I CONVERT from=%u  to=%u \n", i + first_vertex,full_edges[i].to);
-            //   }
-            //   if(full_edges[i].to == UINT32_MAX){
-            //   // if(i + first_vertex ==  full_edges[i].to || full_edges[i].to == UINT32_MAX){
-            //     continue;
-            //   }
-            //   // printf("BASE rank=%d %u -> %u recv_from=%u\n", G->rank, from,  to, cheapest_received_from);
-            //
-            //   // printf("AFTER rank =%d from=%u to=%u received_rank=%u\n",G->rank, i + first_vertex, full_edges[i].to, full_edges[i].cheapest_rank_to );
-            //
-            //   broadcast_results[count] = i + first_vertex;
-            //   broadcast_results[count + 1] = full_edges[i].to;
-            //   broadcast_results[count + 2] = full_edges[i].cheapest_rank_to;
-            //   count+=3;
-            // }
             main_merge(full_edges, broadcast_results, G, edge_parents, edges, changed, added_edges);
-            // merge_ask(full_edges, broadcast_results, count, G, edge_parents, edges, changed, added_edges);
-            // printf("I RECEIVE %u\n", G->rank);
           }
           else{
 
@@ -623,14 +524,7 @@ extern "C" void MST_boruvka(graph_t *G, result_t &trees) {
                   mapT::iterator found = edges.find(to);
                   if(found->second.edge != UINT64_MAX)
                     to = G->endV[find_in_edges(edge_parents,found->second.edge,G)];
-
-                  // if(to_weights[count].from_component == to){
-                  //   to_weights[count].to = UINT32_MAX;
-                  //   // continue;
-                  // }
-                  // else{
-                    to_weights[count].to = to;
-                  // }
+                  to_weights[count].to = to;
                   to_weights[count].from_component = full_edges[local_from].foreign;
                   to_weights[count].weight = full_edges[local_from].weight;
 
@@ -643,8 +537,6 @@ extern "C" void MST_boruvka(graph_t *G, result_t &trees) {
             MPI_Bcast(&results_count, 1, MPI_UINT32_T, p, MPI_COMM_WORLD);
             MPI_Bcast(broadcast_results, results_count, MPI_UINT32_T, p, MPI_COMM_WORLD);
             merge_ask(full_edges, broadcast_results, results_count, G, edge_parents, edges, changed, added_edges);
-
-            // printf("I SEND %u\n", G->rank);
           }
         }
     if(!changed){
