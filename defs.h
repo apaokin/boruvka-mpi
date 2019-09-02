@@ -18,42 +18,18 @@ typedef uint64_t edge_id_t;
 typedef double weight_t;
 typedef std::vector<std::vector<edge_id_t > > result_t;
 
-/* The graph data structure*/
-
-// typedef struct
-// {
-//   vertex_id_t parent;
-//   edge_id_t rank;
-// } tree_vertex_t;
-
-
-
 typedef struct
 {
-  // vertex_id_t vertex;
   vertex_id_t parent;
   vertex_id_t foreign;
   vertex_id_t cheapest_rank_to;
-  // vertex_id_t  end;
-
-  // vertex_id_t request;
-
-  // vertex_id_t component_to;
-
-  edge_id_t edge;
-
-  // edge_id_t foreign_edge;
-
-  weight_t weight;
   vertex_id_t to;
-  // vertex_id_t rank;
-  // vertex_id_t foreign_rank;
-
+  edge_id_t edge;
+  weight_t weight;
 } full_edge_t;
 
 typedef struct
 {
-  // edge_id_t home_reference;
   bool end;
   edge_id_t parent;
   vertex_id_t rank;
@@ -64,7 +40,6 @@ typedef struct
 {
   vertex_id_t from_component;
   vertex_id_t to;
-  // vertex_id_t rank;
   weight_t weight;
 } to_weight_t;
 

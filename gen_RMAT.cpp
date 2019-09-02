@@ -5,7 +5,7 @@
 #include <math.h>
 #include <error.h>
 #include <vector>
-#include <algorithm> 
+#include <algorithm>
 #include <unistd.h>
 #include "defs.h"
 
@@ -19,7 +19,7 @@ using namespace std;
 
 vector<edge_id_t> edges;
 
-void usage(int argc, char **argv) 
+void usage(int argc, char **argv)
 {
     printf("RMAT graph generator\n");
 	printf("Usage:\n");
@@ -73,7 +73,7 @@ void init (int argc, char** argv, graph_t* G)
 
 /* function is adapted from SNAP
  * http://snap-graph.sourceforge.net/ */
-void gen_RMAT_graph(graph_t* G) 
+void gen_RMAT_graph(graph_t* G)
 {
     bool undirected;
     vertex_id_t n;
@@ -219,7 +219,7 @@ void gen_RMAT_graph(graph_t* G)
     /* Update graph data structure */
     if (undirected) {
         G->endV = (vertex_id_t *) malloc(2*m * sizeof(vertex_id_t));
-    } else { 
+    } else {
         G->endV = (vertex_id_t *) malloc(m * sizeof(vertex_id_t));
     }
 
@@ -234,10 +234,10 @@ void gen_RMAT_graph(graph_t* G)
     else
         G->m = m;
 
-    G->weights = (double *) malloc(G->m * sizeof(double));       
+    G->weights = (double *) malloc(G->m * sizeof(double));
     assert(G->weights != NULL);
 
-    G->rowsIndices[0] = 0; 
+    G->rowsIndices[0] = 0;
     for (vertex_id_t i=1; i<=G->n; i++) {
         G->rowsIndices[i] = G->rowsIndices[i-1] + degree[i-1];
     }
@@ -254,7 +254,7 @@ void gen_RMAT_graph(graph_t* G)
             G->endV[G->rowsIndices[v]+offset-1] = u;
             G->weights[G->rowsIndices[v]+offset-1] = dbl_weight[i];
         }
-    } 
+    }
 
     free(src);
     free(dest);
@@ -267,10 +267,10 @@ void gen_RMAT_graph(graph_t* G)
 void writeBinaryGraph(graph_t *G, char *filename)
 {
     FILE *F = fopen(filename, "wb");
-    if (!F) error(EXIT_FAILURE, 0, "Error in opening file %s", filename);
-	
+    // if (!F) error(EXIT_FAILURE, 0, "Error in opening file %s", filename);
+
     assert(fwrite(&G->n, sizeof(vertex_id_t), 1, F) == 1);
-    
+
     assert(fwrite(&G->m, sizeof(edge_id_t), 1, F) == 1);
     assert(fwrite(&G->directed, sizeof(bool), 1, F) == 1);
     uint8_t align = 0;
@@ -303,6 +303,6 @@ int main (int argc, char** argv)
     gen_RMAT_graph(&g);
     //printGraph(&g);
     writeBinaryGraph(&g, outFilename);
-    
+
     return 0;
 }

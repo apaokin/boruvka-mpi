@@ -39,7 +39,7 @@ void init(int argc, char** argv, graph_t* G)
     int l;
     inFilename[0] = '\0';
     outFilename[0] = '\0';
-    bool no_in_filename = true; 
+    bool no_in_filename = true;
 
     if (argc == 1) usage(argc, argv);
 
@@ -71,14 +71,14 @@ void write_output_information(forest_t *trees, char *filename)
     fclose(F);
 }
 
-int main(int argc, char **argv) 
+int main(int argc, char **argv)
 {
     graph_t g;
     struct timespec start_ts, finish_ts;
     double *perf;
     forest_t trees_output;
     /* initializing and reading the graph */
-    init(argc, argv, &g); 
+    init(argc, argv, &g);
     readGraph(&g, inFilename);
     init_mst(&g);
 
@@ -97,7 +97,7 @@ int main(int argc, char **argv)
     }
     printf("algorithm iterations finished.\n");
 
-    convert_to_output(&g, result, &trees_output);
+    convert_to_output_old(&g, result, &trees_output);
     write_output_information(&trees_output, outFilename);
     free(trees_output.p_edge_list);
     free(trees_output.edge_id);
@@ -113,7 +113,7 @@ int main(int argc, char **argv)
     }
     avg_perf /= nIters;
 
-    printf("%s: vertices = %d edges = %lld trees = %u nIters = %d MST performance min = %.4f avg = %.4f max = %.4f MTEPS\n", 
+    printf("%s: vertices = %d edges = %lld trees = %u nIters = %d MST performance min = %.4f avg = %.4f max = %.4f MTEPS\n",
             inFilename, g.n, (long long)g.m, trees_output.numTrees, nIters, min_perf, avg_perf, max_perf);
     printf("Performance = %.4f MTEPS\n", avg_perf);
     free(perf);
