@@ -135,7 +135,8 @@ extern "C" void convert_to_output(graph_t *G, result_t &trees_mst, forest_t *tre
               k++;
           }
       }
-      printf("numTrees= %u \n",  trees_mst.size());
+      printf("size= %d\n",  G->nproc);
+      printf("numTrees= %u\n",  trees_mst.size());
       fflush(stdout);
       trees_output->numTrees = trees_mst.size();
       trees_output->numEdges = number_of_edges;
@@ -470,9 +471,9 @@ extern "C" void MST_boruvka(graph_t *G, result_t &trees) {
           full_edges[i].cheapest_rank_to = G->rank;
         }
         for(vertex_id_t i = 0; i < G->local_n; i++) {
+          vertex_id_t first_component_index =  find(full_edges, i, G);
+          vertex_id_t global_first_component_index = full_edges[first_component_index].foreign;
           for (edge_id_t j = G->rowsIndices[i]; j < G->rowsIndices[i+1]; j++) {
-            vertex_id_t first_component_index =  find(full_edges, i, G);
-            vertex_id_t global_first_component_index = full_edges[first_component_index].foreign;
             vertex_id_t second_component_index = G->endV[find_in_edges(edge_parents,j,G)];
 
             if(global_first_component_index == second_component_index){
